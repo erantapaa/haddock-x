@@ -100,7 +100,7 @@ bindir={}
 topdir={}
 """.format(shquote(exedir), shquote(datadir), shquote(bindir), shquote(topdir))
 
-def install_haddock_from_stack_work(stack_home, stack_work):
+def install_haddock_from_stack_work(stack_home, stack_work, wrapper):
   # find the bin directory under .stack-work/install
   install_dir = os.path.join(stack_work, "install")
   (a,r,g) = unique_element( generic_arch_resolver_ghc(install_dir)) \
@@ -110,8 +110,8 @@ def install_haddock_from_stack_work(stack_home, stack_work):
   real_haddock = os.path.join(bindir, "haddock")
   ghc_version = "ghc-" + g.leaf
   arch = a.leaf
-  g_fullpath = os.join(stack_home, "programs", a.leaf, ghc_version)
-  install_haddock0(g_fullpath, real_haddock, None)
+  g_fullpath = os.path.join(stack_home, "programs", a.leaf, ghc_version)
+  install_haddock0(g_fullpath, real_haddock, wrapper)
 
 def find_ghc_directory(stack_home, ghc_version):
   programs = os.path.join(stack_home, "programs")
@@ -181,15 +181,15 @@ def cmd_revert(stack_home, opts):
   revert_haddock(stack_home, v)
 
 def cmd_install(stack_home, opts):
+  wrapper = opts.wrapper
+  if wrapper:
+    check_executable(wrapper)
   if opts.from_stack_work:
-    install_haddock_from_stack_work(stack_home, ".")
+    install_haddock_from_stack_work(stack_home, ".stack-work", wrapper)
   else:
     v = check_ghc_version(opts.ghc)
     haddock = opts.haddock
-    wrapper = opts.wrapper
     check_executable(haddock)
-    if wrapper:
-      check_executable(wrapper)
     install_haddock(stack_home, v, haddock, wrapper)
 
 def die(msg):
@@ -206,18 +206,20 @@ def main():
   p.add_argument("--haddock", action="store", help="path to haddock binary")
   p.add_argument("--wrapper", action="store", help="path to wrapper script")
   p.add_argument("--revert",  action="store_true", help="revert to original haddock")
-  p.add_argument('--verbose', action='store_true', help="show file actions")
+  p.add_argument('--quiet', action='store_true', help="show file actions")
   p.add_argument('--dryrun', action='store_true', help="do not perform modifications")
 
   opts = p.parse_args()
   global opt_verbose
   global opt_dryrun
 
-  opt_verbose = True
-  opt_dryrun = True
+  opt_verbose = not opts.quiet
+  opt_dryrun = opts.dryrun
 
   if opts.revert:
     cmd_revert(stack_home, opts)
+  elif opts.from_stack_work:
+    cmd_install(stack_home, opts)
   elif not opts.haddock:
     p.print_help()
     sys.exit(1)
@@ -228,24 +230,45 @@ def write_file(path, contents):
   with open(path, 'w') as f:
     f.write(contents)
 
+def dryrun_mark():
+  if opt_dryrun:
+    return " (dryrun)"
+  else:
+    return ""
+
 def do_install_script(path, contents):
   if opt_verbose:
-    print "Installing into:", path
+    print ""
+    print "Installing:", dryrun_mark()
+    print "  - into:", path
     print "---"
     print contents
     print "---"
   if not opt_dryrun:
     write_file(path, contents)
+    st = os.stat(path)
+    os.chmod(path, st.st_mode | 0755)
     print "Wrote", path
 
 def do_copy_file(source, dest):
-  if verbose:
-    print "Copying:"
+  if opt_verbose:
+    print ""
+    print "Copying:", dryrun_mark()
     print "  - from:", source
     print "  -   to:", dest
   if not opt_dryrun:
     copyfile(source, dest)
     print "Copied", source
+
+def do_move_file(source, dest):
+  if opt_verbose:
+    print ""
+    print "Renaming:", dryrun_mark()
+    print "  - from:", source
+    print "  -   to:", dest
+  if not opt_dryrun:
+    os.rename(source,dest)
+    print "Renamed", source
 
 if __name__ == '__main__':
   main()

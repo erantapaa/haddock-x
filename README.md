@@ -3,7 +3,16 @@
 
     cd 7.10.x
     stack build
-    ./install-haddock --from-stack-work
+    ../install-haddock --from-stack-work
+
+This will build the modified version of haddock for GHC-7.10.x
+and install it in your ~/.stack directory so that stack will
+use it.
+
+Note: The specific version of GHC used depends on the resolver
+setting in the file `7.10.x/stack.yaml`.
+
+For GHC-8.0.1, use the source in the `8.0.x` directory.
 
 ### Introduction
 
