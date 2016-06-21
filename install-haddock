@@ -1,0 +1,252 @@
+#!/usr/bin/env python
+#
+# Install a redirection script for haddock in a stack environment.
+
+import sys
+import os
+import re
+import collections
+from shutil import copyfile
+import argparse
+
+class Path:
+  def __init__(self, path, leaf=None):
+    self.fullpath = path
+    if leaf is None:
+      self.leaf = os.path.basename(path)
+    else:
+      self.leaf = leaf
+  def join(self, leaf):
+    return Path( os.path.join( self.fullpath, leaf ), leaf )
+  def __str__(self):
+    return self.leaf
+  def __repr__(self):
+    return self.__str__()
+
+def path_listdir(dir):
+  for x in os.listdir(dir):
+    yield Path( os.path.join(dir, x), x )
+
+def all_subdirs(dir):
+  for x in path_listdir(dir.fullpath):
+    if os.path.isdir(x.fullpath):
+      yield x
+
+def subdir(dir, sdir):
+  path = dir.join(sdir)
+  if os.path.isdir(path.fullpath):
+    yield path
+
+# return all arch, resolver, ghc tuples for a stack home directory
+def generic_arch_resolver_ghc(dir):
+  start = Path(dir)
+  for p1 in all_subdirs( start ):
+    for p2 in all_subdirs( p1 ):
+      for p3 in all_subdirs( p2 ):
+        yield (p1, p2, p3)
+
+# return all arch, resolver, ghc tuples for a specific resolver
+def generic_arch_ghc_for_resolver(dir, resolver):
+  start = Path( dir )
+  for p1 in all_subdirs( start ):
+    for p2 in subdir(p1, resolver):
+      for p3 in all_subdirs(p2):
+        yield (p1, p3)
+
+def stack_snapshots_arch_resolver_ghc(stack_home):
+  generic_arch_resolver_ghc( os.path.join(stack_home, "snapshots") )
+
+def stack_snapshots_arch_ghc_for_resolver(stack_home, resolver):
+  dir = os.path.join(stack_home, "snapshots")
+  return generic_arch_ghc_for_resolver(dir, resolver)
+
+def stack_programs_arch_ghc(stack_home):
+  for p1 in subdirs( os.path.join( stack_home, "programs" ) ):
+    for p2 in subdirs( p1 ):
+      yield (p1, p2)
+
+def stack_programs_arch_for_ghc(stack_home, ghc_version):
+  start = Path( os.path.join(stack_home, "programs") )
+  for p1 in all_subdirs( start ):
+    for p2 in subdir(p1, ghc_version):
+      yield (p1, p2)
+
+def stack_install_arch_resolver_ghc(stack_work):
+  return generic_arch_resolver_ghc( os.path.join(stack_work, "install") )
+
+def unique_element(it):
+  first = None
+  for x in it:
+    if first:
+      return None
+    else:
+      first = x
+  return first
+
+def shquote(s):
+  """Shell quote a string"""
+  return '"' + s + '"'
+
+def make_script_prelude(ghc_dir):
+  ghc_version = os.path.basename(ghc_dir)
+  topdir = os.path.join(ghc_dir, "lib", ghc_version)
+  exedir = os.path.join(topdir, "bin")
+  datadir = os.path.join(ghc_dir, "share")
+  bindir = os.path.join(ghc_dir, "bin")
+  return """
+exedir={}
+datadir={}
+bindir={}
+topdir={}
+""".format(shquote(exedir), shquote(datadir), shquote(bindir), shquote(topdir))
+
+def install_haddock_from_stack_work(stack_home, stack_work):
+  # find the bin directory under .stack-work/install
+  install_dir = os.path.join(stack_work, "install")
+  (a,r,g) = unique_element( generic_arch_resolver_ghc(install_dir)) \
+              or die ("unable to find a unique bin directory under " + install)
+  bindir = os.path.join(g.fullpath, "bin")
+
+  real_haddock = os.path.join(bindir, "haddock")
+  ghc_version = "ghc-" + g.leaf
+  arch = a.leaf
+  g_fullpath = os.join(stack_home, "programs", a.leaf, ghc_version)
+  install_haddock0(g_fullpath, real_haddock, None)
+
+def find_ghc_directory(stack_home, ghc_version):
+  programs = os.path.join(stack_home, "programs")
+  return unique_element( stack_programs_arch_for_ghc(stack_home, ghc_version)) \
+           or die ("unable to find the unique ghc directory for " \
+                      + ghc_version + " under " + programs)
+
+def revert_haddock(stack_home, ghc_version):
+  (a, g) = find_ghc_directory(stack_home, ghc_version)
+  dest = os.path.join( g.fullpath, "bin/haddock")
+  orig = dest + ".ORIG"
+  if os.path.exists(orig):
+    do_copy_file(orig, dest)
+  else:
+    die("haddock.ORIG not found at "+orig)
+
+def install_haddock(stack_home, ghc_version, real_haddock, wrapper):
+  (a, g) = find_ghc_directory(stack_home, ghc_version)
+  install_haddock0(g.fullpath, real_haddock, wrapper)
+
+def install_haddock0(g_fullpath, real_haddock, wrapper):
+  """Install a redirection script given a ghc directory.
+     g_fulldir is typically ~/.stack/programs/<arch>/<ghc-vers>"""
+  dest = os.path.join(g_fullpath, "bin/haddock")
+  orig = dest + ".ORIG"
+  if not os.path.exists(orig):
+    do_copy_file(dest, orig)
+
+  real_haddock = os.path.abspath(real_haddock)
+  args = '${1+"$@"}'
+  if wrapper:
+    wrapper = os.path.abspath(wrapper)
+    invoke = 'exec {} {} -B"$topdir" {}'.format(shquote(wrapper), shquote(real_haddock), args)
+  else:
+    invoke = 'exec {} -B"$topdir" {}'.format(shquote(real_haddock), args)
+  prelude = make_script_prelude(g_fullpath)
+  script = """#!/bin/sh
+{}
+{}
+""".format(prelude, invoke)
+
+  do_install_script(dest, script)
+
+def is_exe(path, name):
+  if not os.path.exists(path):
+    die("{} does not exist: {}".format(name, path))
+  if not os.path.isfile(path):
+    die("{} is not a file: {}".format(name, path))
+  if not os.access(path, os.X_OK):
+    die("{} is not executable: {}".format(name, path))
+
+def check_executable(path):
+  is_exe(path, os.path.basename(path))
+
+def check_ghc_version(v):
+  if v is None:
+    die ("--ghc option required")
+  if re.match(r"ghc-[\d.]+\Z", v):
+    return v
+  elif re.match(r"[\d.]+\Z", v):
+    return ("ghc-" + v)
+  else:
+    die ("invalid ghc version: >" + v + "<")
+
+def cmd_revert(stack_home, opts):
+  v = check_ghc_version(opts.ghc)
+  revert_haddock(stack_home, v)
+
+def cmd_install(stack_home, opts):
+  if opts.from_stack_work:
+    install_haddock_from_stack_work(stack_home, ".")
+  else:
+    v = check_ghc_version(opts.ghc)
+    haddock = opts.haddock
+    wrapper = opts.wrapper
+    check_executable(haddock)
+    if wrapper:
+      check_executable(wrapper)
+    install_haddock(stack_home, v, haddock, wrapper)
+
+def die(msg):
+  sys.exit("FATAL: " + msg)
+
+def main():
+  stack_home = os.path.join(os.path.expanduser("~"), ".stack")
+  if not os.path.isdir(stack_home):
+    die ("stack home directory does not exist: " + stack_home)
+
+  p = argparse.ArgumentParser()
+  p.add_argument("--from-stack-work", action="store_true", help="install from .stack/install")
+  p.add_argument("--ghc", action="store", help="ghc version")
+  p.add_argument("--haddock", action="store", help="path to haddock binary")
+  p.add_argument("--wrapper", action="store", help="path to wrapper script")
+  p.add_argument("--revert",  action="store_true", help="revert to original haddock")
+  p.add_argument('--verbose', action='store_true', help="show file actions")
+  p.add_argument('--dryrun', action='store_true', help="do not perform modifications")
+
+  opts = p.parse_args()
+  global opt_verbose
+  global opt_dryrun
+
+  opt_verbose = True
+  opt_dryrun = True
+
+  if opts.revert:
+    cmd_revert(stack_home, opts)
+  elif not opts.haddock:
+    p.print_help()
+    sys.exit(1)
+  else:
+    cmd_install(stack_home, opts)
+
+def write_file(path, contents):
+  with open(path, 'w') as f:
+    f.write(contents)
+
+def do_install_script(path, contents):
+  if opt_verbose:
+    print "Installing into:", path
+    print "---"
+    print contents
+    print "---"
+  if not opt_dryrun:
+    write_file(path, contents)
+    print "Wrote", path
+
+def do_copy_file(source, dest):
+  if verbose:
+    print "Copying:"
+    print "  - from:", source
+    print "  -   to:", dest
+  if not opt_dryrun:
+    copyfile(source, dest)
+    print "Copied", source
+
+if __name__ == '__main__':
+  main()
+

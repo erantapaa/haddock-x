@@ -1,0 +1,74 @@
+#!/usr/bin/env python2.7
+#
+# A wrapper around haddock to log calls and modify behavior.
+#
+# Usage: wrap-haddock REAL_HADDOCK args...
+
+import os
+import sys
+import subprocess
+
+LOGFILE = "/tmp/log-haddock"
+
+def main():
+  args = sys.argv[1:]
+
+  added = []
+  haddock_bin =  args.pop(0)
+  cwd = os.getcwd()
+
+  if has_at_arg(args):
+    # we are actually generating docs
+    # example of changing the output directory:
+    #   added.extent(['--odir', '/some/directory'])
+    pass
+
+  has_gen_index_arg = "--gen-index" in args
+
+  # Skip re-generating the index and contents pages
+  running = not has_gen_index_arg
+
+  # add some arguments
+  args.extend(added)
+
+  log_call(haddock_bin, args, cwd, added, running)
+
+  if running:
+    args.insert(0, haddock_bin)
+    subprocess.call( args )
+
+def has_version_arg(args):
+  return any( ("-version" in e) for e in args)
+
+def has_at_arg(args):
+  return any( e.startswith('@')  for e in args )
+
+def log_call(haddock_bin, args, cwd, added, running):
+  with open(LOGFILE, 'a') as f:
+    print >>f, ""
+    print >>f, "==================================="
+    print >>f, "  time   :", time.strftime("%Y-%m-%d %H:%M:%S")
+    print >>f, "  cwd    :", cwd
+    print >>f, "  haddock:", haddock_bin
+    print >>f, "  added  :", added
+    print >>f, "  args   :"
+    for g in args:
+      print >>f, "          ", g
+    # Expand out any @-args
+    print >>f, "-----------------------------------"
+    for a in args:
+      if a.startswith('@'):
+        show_file_contents(f, a[1:])
+    if not running:
+      print >>f, "  -- NOT RUNNING --"
+    print >>f, "-- end --"
+
+def show_file_contents(f, path):
+  print >>f, "  Contents of " + path + ":"
+  with open(path) as fh:
+    for line in fh.readlines():
+      print >>f, line,
+
+if __name__ == "__main__":
+  main()
+
