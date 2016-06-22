@@ -231,7 +231,8 @@ renderStep dflags flags qual pkgs interfaces = do
       ((_, Just path), ifile) <- pkgs
       iface <- ifInstalledIfaces ifile
       return (instMod iface, path)
-  render dflags flags qual interfaces installedIfaces extSrcMap
+  when (not (null interfaces)) $ do
+    render dflags flags qual interfaces installedIfaces extSrcMap
 
 
 -- | Render the interfaces with whatever backend is specified in the flags.

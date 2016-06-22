@@ -14,7 +14,19 @@ setting in the file `7.10.x/stack.yaml`.
 
 For GHC-8.0.1, use the source in the `8.0.x` directory.
 
-### Introduction
+An example of generating Haddocks for a package:
+
+    stack --resolver nightly-2016-06-14 haddock heredoc-0.2.0.0
+
+or from within a stack build directory:
+
+    stack haddock
+
+and then look in:
+
+     .stack-work/dist/.../Cabal-1.24.0.0/doc/html/
+
+### Overview
 
 This repo contains experiments with haddock. Specifically it
 contains modified versions of haddock which can emit type span
