@@ -1110,7 +1110,7 @@ function initialize() {
   req.send()
 
   // set up event handlers
-  document.onclick = function (e) { handle_click(e); return false }
+  document.onclick = function (e) { if (e.shiftKey) { handle_click(e); return false }  }
   document.onkeypress = function (e) { handle_keypress(e); return false }
 };
 
