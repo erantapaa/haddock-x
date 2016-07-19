@@ -400,13 +400,36 @@ function Cursor() {
 // innermost_span([span]) : span
 // grow_span(span, [span[) : span
 
-function highlight_span(span) {
-  visit_span(span, function (e,ln,lpos,rpos) {
-    if (!(e.className && (e.className.indexOf("highlighted") >= 0))) {
-      e.className = e.className + " highlighted"
-    }
-  });
+function add_highlight_class(e) {
+  if (!(e.className && (e.className.indexOf("highlighted") >= 0))) {
+    e.className = e.className + " highlighted"
+  }
 }
+
+function is_whitespace_element(e) {
+  if (e.tagName == "SPAN") {
+    return (e.className == "" || e.className == "hs-comment")
+  } else if (at_line_start(e)) {
+    return true
+  }
+  return false
+}
+
+function highlight_span(span) {
+  var tokens = []
+  visit_span(span, function (e,ln,lpos,rpos) {
+    if (is_whitespace_element(e)) {
+      tokens.push(e)
+    } else {
+      for (var i = 0; i < tokens.length; i++) {
+        add_highlight_class(tokens[i])
+      }
+      tokens = []
+      add_highlight_class(e)
+    }
+  })
+}
+
 
 function visit_span(span, f) {
   var start_line = span[0]
@@ -912,6 +935,7 @@ function handle_keypress(e) {
 }
 
 function handle_click(e) {
+  document.getSelection().removeAllRanges();
   var x = e.clientX, y = e.clientY, elt = document.elementFromPoint(x,y)
   if (!elt) {
     console.log("elt is null")
@@ -1110,7 +1134,7 @@ function initialize() {
   req.send()
 
   // set up event handlers
-  document.onclick = function (e) { if (e.shiftKey) { handle_click(e); return false }  }
+  document.onclick = function (e) { if (e.shiftKey) { handle_click(e); return false } else { return true } }
   document.onkeypress = function (e) { handle_keypress(e); return false }
 };
 
