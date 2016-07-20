@@ -14,6 +14,25 @@
 // elt_offset
 // first_body_pre
 
+// compute the visible width of text
+// tab stops occur every 8 character positions
+function text_width(txt, start) {
+  var end = start
+  var i = 0
+  while (i < txt.length) {
+    var j = txt.indexOf("\t", i)
+    if (j >= 0) {
+      end += j - i
+      end += 8 - (end % 8)
+      i = j+1
+    } else {
+      end += txt.length - i
+      break
+    }
+  }
+  return end
+}
+
 function text_content(elt) {
   return elt_text_content(elt)
 }
@@ -29,6 +48,7 @@ function elt_text_content(elt) {
 }
 
 function text_content_length(elt) {
+  // deprecated
   if (elt) {
     var t = elt.textContent
     if (t) {
@@ -149,21 +169,22 @@ function show_object(obj) {
 
 function locate_line(elt) {
   var found
-  var initlen = text_content_length(elt)
-  var textlen = 0
-  var count = 10000
+  var text = ""
+  var eltlen = text_content_length(elt)
+  var count = 100000
   var wentup = false
 
-  while (count > 0 && elt) {
-    count = count - 1
-    // console.log("at", elt)
+  // extract the text on the line before this element
+  var next = elt
+  while (count-- > 0 && elt) {
     if (elt.nodeType == 3) {
-      textlen += text_content_length(elt)
+      text = e.text_content + text
     } else if (found = at_line_start(elt)) {
-      break;
+      break
     } else if (!wentup) {
-      textlen += text_content_length(elt)
+      text = elt_text_content(elt) + text
     }
+
     wentup = false
     var next = elt.previousSibling
     if (!next) {
@@ -175,9 +196,11 @@ function locate_line(elt) {
     }
     elt = next
   }
+
   if (found) {
-    var minCol = textlen - initlen + 1
-    var maxCol = textlen + 1
+    var end = text_width( text.substring(0, text.length - eltlen ), 0)
+    var minCol = end + 1
+    var maxCol = text_width( text.substring(text.length-eltlen), end ) + 1
     return [found, minCol, maxCol, elt]
   } else {
     return
@@ -342,21 +365,22 @@ function Cursor() {
 
   // return the current right position
   this.rpos = function () {
-    var len = this.elt.textContent.length
-    return this.column + len
+    return text_width( this.elt.textContent, this.column )
   }
 
   // advance - returns false if at end
   this.advance = function () {
-    var len = this.elt.textContent.length
-    this.elt = this.elt.nextSibling
-    if (this.elt) {
-      var ln = at_line_start(this.elt)
+    var elt = this.elt.nextSibling
+    if (elt) {
+      var ln = at_line_start(elt)
       if (ln) {
+        this.elt = elt
         this.lineno = ln
         this.column = 0
       } else {
-        this.column += len
+        this.column = this.rpos()
+        // note: call this.rpos() before changing this.elt
+        this.elt = elt
       }
       return true
     } else {
@@ -376,13 +400,36 @@ function Cursor() {
 // innermost_span([span]) : span
 // grow_span(span, [span[) : span
 
-function highlight_span(span) {
-  visit_span(span, function (e,ln,lpos,rpos) {
-    if (!(e.className && (e.className.indexOf("highlighted") >= 0))) {
-      e.className = e.className + " highlighted"
-    }
-  });
+function add_highlight_class(e) {
+  if (!(e.className && (e.className.indexOf("highlighted") >= 0))) {
+    e.className = e.className + " highlighted"
+  }
 }
+
+function is_whitespace_element(e) {
+  if (e.tagName == "SPAN") {
+    return (e.className == "" || e.className == "hs-comment")
+  } else if (at_line_start(e)) {
+    return true
+  }
+  return false
+}
+
+function highlight_span(span) {
+  var tokens = []
+  visit_span(span, function (e,ln,lpos,rpos) {
+    if (is_whitespace_element(e)) {
+      tokens.push(e)
+    } else {
+      for (var i = 0; i < tokens.length; i++) {
+        add_highlight_class(tokens[i])
+      }
+      tokens = []
+      add_highlight_class(e)
+    }
+  })
+}
+
 
 function visit_span(span, f) {
   var start_line = span[0]
@@ -888,6 +935,7 @@ function handle_keypress(e) {
 }
 
 function handle_click(e) {
+  document.getSelection().removeAllRanges();
   var x = e.clientX, y = e.clientY, elt = document.elementFromPoint(x,y)
   if (!elt) {
     console.log("elt is null")
@@ -1086,7 +1134,7 @@ function initialize() {
   req.send()
 
   // set up event handlers
-  document.onclick = function (e) { handle_click(e); return false }
+  document.onclick = function (e) { if (e.shiftKey) { handle_click(e); return false } else { return true } }
   document.onkeypress = function (e) { handle_keypress(e); return false }
 };
 
