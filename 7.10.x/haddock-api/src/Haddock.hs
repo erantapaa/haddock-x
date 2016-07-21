@@ -339,7 +339,7 @@ render dflags flags qual ifaces installedIfaces extSrcMap = do
 
   when (Flag_HyperlinkedSource `elem` flags) $ do
     ppHyperlinkedSource odir libDir opt_source_css pretty srcMap ifaces
-    ppEmitTypeSpansJSON dflags ifaces odir
+    ppEmitTypeSpansJSON ifaces odir
 
 -- | From GHC 7.10, this function has a potential to crash with a
 -- nasty message such as @expectJust getPackageDetails@ because

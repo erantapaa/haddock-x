@@ -52,14 +52,9 @@ ppCollectTypedNodes tc_src mod = do
   liftErrMsg $ tell [ "=== " ++ msg ]
   return (lexprs, lbinds, lpats)
 
--- generate type spans for a single Interface
-genTypeSpans :: DynFlags -> Interface -> IO (String, [(Int,Int,Int,Int,String)])
-genTypeSpans dflags iface = do
-  let (lexprs,lbinds,lpats) = ifaceTypedNodes iface
-      hs_env = ifaceHscEnv iface
-      modname = moduleNameString $ moduleName $ ifaceMod iface
-      style = defaultUserStyle
-
+genTypeSpans :: DynFlags -> HscEnv -> [LHsExpr Id] -> [LHsBind Id] -> [LPat Id] -> IO [TypeSpan]
+genTypeSpans dflags hs_env lexprs lbinds lpats = do
+  let style = defaultUserStyle
   exprs <- mapM (getType hs_env) lexprs
   binds <- mapM (getTypeBind hs_env) lbinds
   pats  <- mapM (getTypePat hs_env) lpats
@@ -68,20 +63,7 @@ genTypeSpans dflags iface = do
       sorted :: [ (SrcSpan, Type) ]
       sorted = sortBy (comparing (fst4.fourInts.fst)) pairs
       tuples  = map (toTuple dflags style) sorted
-  return (modname, tuples)
-
-ppEmitTypeSpans :: DynFlags -> [Interface] -> FilePath -> FilePath -> IO ()
-ppEmitTypeSpans dflags ifaces outdir outfile = do
-  let outpath = outdir </> hypSrcDir </> outfile
-      style = defaultUserStyle
-
-  withFile outpath WriteMode $ \h -> do
-    let emit = hPutStrLn h
-    forM_ ifaces $ \iface -> do
-      (modname, tuples) <- genTypeSpans dflags iface
-      emit $ "module " ++ modname
-      forM_ tuples $ \(a,b,c,d,t) -> do
-        emit $ intercalate " " [show a, show b, show c, show d, t]
+  return tuples
 
 jslist (a,b,c,d,t) = "[" ++ intercalate "," [show a, show b, show c, show d, jsstr t] ++ "]"
 
@@ -98,10 +80,12 @@ jschr ch
   where n = ord ch
 
 -- emit the type spans as JS in separate files
-ppEmitTypeSpansJSON :: DynFlags -> [Interface] -> FilePath -> IO ()
-ppEmitTypeSpansJSON dflags ifaces outdir = do
+ppEmitTypeSpansJSON :: [Interface] -> FilePath -> IO ()
+ppEmitTypeSpansJSON ifaces outdir = do
   forM_ ifaces $ \iface -> do
-    (modname, tuples) <- genTypeSpans dflags iface
+
+    let modname = moduleNameString $ moduleName $ ifaceMod iface
+        tuples = ifaceTypeSpans iface
     let outpath = outdir </> hypSrcDir </> (modname ++ ".json")
         output = "[\n"
                    ++ (intercalate ",\n" $ map jslist tuples)

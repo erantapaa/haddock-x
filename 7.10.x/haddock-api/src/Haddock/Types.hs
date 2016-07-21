@@ -41,6 +41,7 @@ import NameSet
 import OccName
 import Outputable
 import Control.Monad (ap)
+import Control.Monad.IO.Class
 
 import Haddock.Backends.Hyperlinker.Types
 
@@ -59,6 +60,7 @@ type InstMap       = Map SrcSpan Name
 type FixMap        = Map Name Fixity
 type DocPaths      = (FilePath, Maybe FilePath) -- paths to HTML and sources
 type TypedNodes    = ([LHsExpr Id], [LHsBind Id], [LPat Id])
+type TypeSpan      = (Int,Int,Int,Int,String)
 
 
 -----------------------------------------------------------------------------
@@ -141,8 +143,7 @@ data Interface = Interface
   , ifaceExternsMap   :: ExternsMap
 
     -- | All the source spans and their types
-  , ifaceTypedNodes   :: TypedNodes
-  , ifaceHscEnv       :: HscEnv
+  , ifaceTypeSpans    :: [TypeSpan]
   }
 
 type WarningMap = Map Name (Doc Name)
@@ -631,7 +632,7 @@ throwE str = throw (HaddockException str)
 -- but we can't just use @GhcT ErrMsgM@ because GhcT requires the
 -- transformed monad to be MonadIO.
 newtype ErrMsgGhc a = WriterGhc { runWriterGhc :: Ghc (a, [ErrMsg]) }
---instance MonadIO ErrMsgGhc where
+-- instance MonadIO ErrMsgGhc where
 --  liftIO = WriterGhc . fmap (\a->(a,[])) liftIO
 --er, implementing GhcMonad involves annoying ExceptionMonad and
 --WarnLogMonad classes, so don't bother.

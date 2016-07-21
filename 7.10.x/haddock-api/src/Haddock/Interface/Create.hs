@@ -25,7 +25,7 @@ import Haddock.Interface.LexParseRn
 import Haddock.Backends.Hyperlinker.Types
 import Haddock.Backends.Hyperlinker.Ast as Hyperlinker
 import Haddock.Backends.Hyperlinker.Parser as Hyperlinker
-import Haddock.Backends.TypeSpans (ppCollectTypedNodes)
+import Haddock.Backends.TypeSpans (ppCollectTypedNodes, genTypeSpans)
 
 import qualified Data.Map as M
 import Data.Map (Map)
@@ -133,7 +133,11 @@ createInterface tm flags modMap instIfaceMap = do
 
   typedNodes <- ppCollectTypedNodes (tm_typechecked_source tm) mdl
 
+  let (lexprs, lbinds, lpats) = typedNodes
+
   hs_env <- liftGhcToErrMsgGhc getSession
+
+  typeSpans <-liftGhcToErrMsgGhc $ liftIO $ genTypeSpans dflags hs_env lexprs lbinds lpats
 
   return $! Interface {
     ifaceMod             = mdl
@@ -160,8 +164,7 @@ createInterface tm flags modMap instIfaceMap = do
   , ifaceWarningMap      = warningMap
   , ifaceTokenizedSrc    = tokenizedSrc
   , ifaceExternsMap      = externsMap
-  , ifaceTypedNodes      = typedNodes
-  , ifaceHscEnv          = hs_env
+  , ifaceTypeSpans       = typeSpans
   }
 
 mkAliasMap :: DynFlags -> Maybe RenamedSource -> M.Map Module ModuleName
